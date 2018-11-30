@@ -18,6 +18,16 @@ class ChunkedUploader(object):
         content_sha1 = self._sha1.digest()
         return self._upload_session.commit(content_sha1=content_sha1, parts=self._part_array)
 
+    def resume(self):
+        parts = self._upload_session.get_parts()
+        for part in parts:
+            if self._inflight_part:
+                if self._inflight_part.offset == part.offset:
+                    self._inflight_part = None
+        self._upload()
+        content_sha1 = self._sha1.digest()
+        return self._upload_session.commit(content_sha1=content_sha1, parts=self._part_array)
+
     def _upload(self):
         while len(self._part_array) < self._upload_session.total_parts:
             next_part = self._inflight_part or self._get_next_part()
@@ -66,3 +76,4 @@ class InflightPart(object):
             part_bytes=self.chunk,
             offset=self.offset,
             total_size=self._total_size)
+

@@ -3,11 +3,13 @@
 
 from __future__ import unicode_literals, absolute_import
 
+import io
 import json
 import pytest
 
 from mock import Mock, call
 from boxsdk.config import API
+from boxsdk.exception import BoxAPIException
 from boxsdk.object.file import File
 from boxsdk.object.upload_session import UploadSession
 from boxsdk.util.chunked_uploader import ChunkedUploader
@@ -134,3 +136,123 @@ def test_start(test_upload_session, mock_box_session):
     assert uploaded_file.description == 'This is a test description'
     assert isinstance(uploaded_file, File)
     assert uploaded_file._session == mock_box_session  # pylint:disable=protected-access
+
+
+def test_resume(mock_box_session, test_upload_session):
+    expected_put_url = '{0}/files/upload_sessions/{1}'.format(API.UPLOAD_URL, test_upload_session.object_id)
+    file_size = 7
+    part_bytes = b'abcdefg'
+    stream = io.BytesIO(part_bytes)
+    third_sha1 = '+CIFFHGVe3u+u4qwiP6b1tFPQmE='
+    fourth_sha1 = 'VP0XESCfscB4EJI3QTLGbnniJBs='
+    first_upload_session_mock_object = Mock(UploadSession)
+    first_upload_session_mock_object.total_parts = 7
+    first_upload_session_mock_object.part_size = 2
+    first_upload_session_mock_object.id = 'F971964745A5CD0C001BBE4E58196BFD'
+    first_upload_session_mock_object.type = 'upload_session'
+    first_upload_session_mock_object.num_parts_processed = 0
+    second_upload_session_mock_object = Mock(UploadSession)
+    second_upload_session_mock_object.total_parts = 7
+    second_upload_session_mock_object.part_size = 2
+    second_upload_session_mock_object.id = 'F971964745A5CD0C001BZ4E58196BFD'
+    second_upload_session_mock_object.type = 'upload_session'
+    second_upload_session_mock_object.num_parts_processed = 0
+    second_chunked_uploader = Mock(ChunkedUploader)
+    uploaded_part_mock_object = Mock()
+    third_response_mock = Mock()
+    fourth_response_mock = Mock()
+    uploaded_part_mock_object = {
+        'part': {
+            'part_id': 'CFEB4BA9',
+            'offset': 0,
+            'size': 2,
+            'sha1': '5fde1cce603e6566d20da811c9c8bcccb044d4ae',
+        }
+    }
+    mock_box_session.get.return_value = {
+        'entries': [
+            {
+                'part_id': 'CFEB4BA9',
+                'offset': 0,
+                'size': 2,
+                'sha1': None,
+            },
+            {
+                'part_id': '4DBB872D',
+                'offset': 2,
+                'size': 2,
+                'sha1': None,
+            },
+        ],
+        'offset': 0,
+        'total_count': 3,
+        'limit': 1000,
+    }
+    part_three = {
+        'part_id': '6F2D3486',
+        'offset': 4,
+        'size': 2,
+        'sha1': third_sha1,
+    }
+    part_four = {
+        'part_id': '4DBC872D',
+        'offset': 6,
+        'size': 1,
+        'sha1': fourth_sha1,
+    }
+    third_response_mock.json.return_value = {
+        'part': part_three
+    }
+    fourth_response_mock.json.return_value = {
+        'part': part_four
+    }
+    chunked_uploader = ChunkedUploader(first_upload_session_mock_object, stream, file_size)
+    first_upload_session_mock_object.upload_part_bytes.side_effect = [uploaded_part_mock_object, BoxAPIException(502)]
+    second_chunked_uploader.upload_session = second_upload_session_mock_object
+    second_upload_session_mock_object.upload_part_bytes.side_effect = [third_response_mock, fourth_response_mock]
+    second_upload_session_mock_object.get_parts.return_value = {
+        'entries': [
+            {
+                'part_id': 'CFEB4BA9',
+                'offset': 0,
+                'size': 2,
+                'sha1': None,
+            },
+            {
+                'part_id': '4DBB872D',
+                'offset': 2,
+                'size': 2,
+                'sha1': None,
+            },
+        ],
+        'offset': 0,
+        'total_count': 3,
+        'limit': 1000,
+    }
+    second_chunked_uploader.resume.return_value = {
+        'entries': [
+            {
+                'type': 'file',
+                'id': '12345',
+                'description': 'This is a test description',
+            }
+        ]
+    }
+    expected_headers_third_upload = {
+        'Content-Type': 'application/octet-stream',
+        'Digest': 'SHA={}'.format(third_sha1),
+        'Content-Range': 'bytes 4-5/7',
+    }
+    expected_headers_fourth_upload = {
+        'Content-Type': 'application/octet-stream',
+        'Digest': 'SHA={}'.format(fourth_sha1),
+        'Content-Range': 'bytes 6-6/7',
+    }
+    try:
+        uploaded_file = chunked_uploader.start()
+    except BoxAPIException:
+        resumed_file_upload = second_chunked_uploader.resume()
+    calls = [call(expected_put_url, data=b'ef', headers=expected_headers_third_upload),
+             call(expected_put_url, data=b'g', headers=expected_headers_fourth_upload), ]
+    second_chunked_uploader.resume.assert_has_calls(calls, any_order=False)
+
