@@ -1,6 +1,29 @@
 Box Python SDK
 ==============
 
+Changes in this fork
+--------------------
+
+`upload_session.get_chunked_uploader` was previously looking for a `file_path` for a file physical file on the server. My use
+case was a little different because I'm uploading a file from a browser (through input type file).
+
+By default, the files object received by a Flask POST request generates a `filestorage` object. So I modified the
+`get_chunked_uploader` method to look for that `filestorage` instead and stream it to the next method.
+
+I'm also passing in an additional parameter named `file_size` since the method is no longer able to determine the file size by
+looking at the file on disk (since it doesn't exist). So the argument being passed is similar to `len(file.read())` which will
+pass in the bytes.
+
+This version isn't on `pip` so if you want to install this, you can either do `pip install boxsdk` as shown below and then
+replace `boxsdk/object/upload_session.py` with the one in this repo OR you can grab the entire `boxsdk` directory from this repo
+and place it in the root of your project.
+
+
+EVERYTHING BELOW THIS LINE IS UNCHANGED FROM THE ORIGINAL README
+----------------------------------------------------------------
+
+
+
 .. image:: http://opensource.box.com/badges/active.svg
     :target: http://opensource.box.com/badges
 
