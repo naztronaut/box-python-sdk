@@ -178,7 +178,7 @@ class UploadSession(BaseObject):
         """
         return ChunkedUploader(self, content_stream, file_size)
 
-    def get_chunked_uploader(self, file_path):
+    def get_chunked_uploader(self, file_path, file_size):
         """
         Instantiate the chunked upload instance and create upload session with path to file.
 
@@ -191,8 +191,10 @@ class UploadSession(BaseObject):
         :rtype:
             :class:`ChunkedUploader`
         """
-        total_size = os.stat(file_path).st_size
-        content_stream = open(file_path, 'rb')
+        # total_size = os.stat(file_path).st_size
+        total_size = file_size
+        # content_stream = open(file_path, 'rb')
+        content_stream = file_path
         return self.get_chunked_uploader_for_stream(
             content_stream=content_stream,
             file_size=total_size,
